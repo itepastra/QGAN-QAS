@@ -164,7 +164,7 @@
           (py.withPackages (
             python-pkgs: with python-pkgs; [
               numpy
-              tensorflow
+              torch
               pennylane
             ]
           ))
