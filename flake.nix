@@ -54,42 +54,72 @@
         ];
       };
 
-      # pennylane-lightning = ps.buildPythonPackage rec {
-      #   pname = "pennylane-lightning";
-      #   version = "0.43.0";
-      #   pyproject = true;
-      #
-      #   src = pkgs.fetchFromGitHub {
-      #     owner = "PennyLaneAI";
-      #     repo = "pennylane-lightning";
-      #     inherit version;
-      #     tag = "v${version}";
-      #     hash = "sha256-YAaUIk1dA+ZIADsLk7MT8eAogKp0O/gibD3ImzguJ60=";
-      #   };
-      #
-      #   nativeBuildInputs = [
-      #     ps.setuptools
-      #     pkgs.cmake
-      #     pkgs.ninja
-      #     ps.tomli
-      #   ];
-      #
-      #   propagatedBuildInputs = with ps; [
-      #   ];
-      # };
+      scipy_openblas32_compat = pkgs.runCommand "scipy-openblas32-compat" { } ''
+        mkdir -p $out/lib
+        # CMake is specifically looking for libscipy_openblas.so
+        ln -s ${pkgs.openblas}/lib/libopenblas.so $out/lib/libscipy_openblas.so
+      '';
 
-      pennylane-lightning = ps.buildPythonPackage rec {
-        pname = "pennylane-lightning";
-        version = "0.43.0";
-        format = "wheel";
+      pennylane-lightning =
+        let
+          nanobind_src = pkgs.fetchFromGitHub {
+            owner = "wjakob";
+            repo = "nanobind";
+            tag = "v2.8.0";
+            hash = "sha256-GGYnyO8eILYNu7va2tMB0QJkBCRDMIfRQO4a9geV49Y=";
+            fetchSubmodules = true;
+          };
 
-        src = pkgs.fetchurl {
-          url = "https://files.pythonhosted.org/packages/46/0f/7161bdc28fcbfab1341d66bbc106fc30db3d21d1caa6747994e9314655b1/pennylane_lightning-0.43.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl";
-          hash = "sha256-a5viL4KQ4nWLePqle4x4m7RyzOVjeolqEMnIh3KqGDw=";
+          catalyst_src = pkgs.fetchFromGitHub {
+            owner = "PennyLaneAI";
+            repo = "catalyst";
+            rev = "d253c59c06728f29b6703e3c9d478e9d7d5823be";
+            hash = "sha256-bDYQWY7i4PN/hckuicUgksZKl9WhDslaxYtk5o6zMMs=";
+            # if catalyst itself uses submodules/fetchcontent, you may need:
+            # fetchSubmodules = true;
+          };
+        in
+        ps.buildPythonPackage rec {
+          pname = "pennylane-lightning";
+          version = "0.43.0";
+          pyproject = true;
+
+          src = pkgs.fetchFromGitHub {
+            owner = "PennyLaneAI";
+            repo = "pennylane-lightning";
+            tag = "v${version}";
+            hash = "sha256-YAaUIk1dA+ZIADsLk7MT8eAogKp0O/gibD3ImzguJ60=";
+            fetchSubmodules = true;
+          };
+
+          # IMPORTANT: prevent Nix’s cmake setup-hook from taking over and leaving us in ./build
+          dontConfigure = true;
+
+          build-system = with ps; [
+            setuptools
+            wheel
+            cmake
+            ninja
+            tomli
+          ];
+
+          nativeBuildInputs = [
+            # pkgs.cmake
+            # pkgs.ninja
+            pkgs.pkg-config
+          ];
+
+          dontCheckRuntimeDeps = true;
+
+          # If you need OpenBLAS compat for SciPy/OpenBLAS symbol name:
+          preBuild = ''
+            export SCIPY_OPENBLAS32=${scipy_openblas32_compat}/lib
+
+            # Pass CMake args to the backend-driven CMake run (scikit-build/setuptools integrations read CMAKE_ARGS)
+            export CMAKE_ARGS="$CMAKE_ARGS -DFETCHCONTENT_SOURCE_DIR_NANOBIND=${nanobind_src} -DLIGHTNING_CATALYST_SRC_PATH=${catalyst_src}"
+          '';
+
         };
-
-        doCheck = false;
-      };
 
       pennylane = ps.buildPythonPackage rec {
         pname = "pennylane";
@@ -100,7 +130,7 @@
           owner = "PennyLaneAI";
           repo = "pennylane";
           tag = "v${version}";
-          sha256 = "sha256-Ab2pElCPsW2c648lAzzcZ7PQ0lffEfVetyh1757usGg=";
+          hash = "sha256-Ab2pElCPsW2c648lAzzcZ7PQ0lffEfVetyh1757usGg=";
         };
 
         nativeBuildInputs = with ps; [
