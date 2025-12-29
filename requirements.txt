@@ -1,5 +1,4 @@
 cirq
 numpy
 pennylane
-pennylane-cirq
 tensorflow==2.17.0

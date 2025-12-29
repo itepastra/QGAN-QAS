@@ -7,7 +7,7 @@ from pennylane.exceptions import PennyLaneDeprecationWarning
 
 warnings.simplefilter("ignore", PennyLaneDeprecationWarning)
 
-device = qml.device("cirq.simulator", wires = 3)
+device = qml.device("default.qubit", wires = 3)
 
 def real(angles: tuple[float]) -> None:
     qml.Hadamard(wires = 0)
