@@ -14,7 +14,7 @@
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs { inherit system; };
-      py = pkgs.python3; # strongly suggest 3.12 here
+      py = pkgs.python313; # strongly suggest 3.12 here
       ps = py.pkgs;
 
       autoray = ps.buildPythonPackage rec {
