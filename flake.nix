@@ -166,6 +166,9 @@
               numpy
               torch
               pennylane
+
+              matplotlib
+              torchvision
             ]
           ))
         ];
