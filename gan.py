@@ -10,10 +10,15 @@ import matplotlib.pyplot as plt
 
 import torchvision
 
-SIDE_LENGTH = 3
-ITERATIONS = 500
-BATCH_SIZE = 1
-GENERATOR_INPUT_SIZE = 9
+SIDE_LENGTH = 4
+ITERATIONS = 5000
+UPDATE_ITERS = 100
+IMAGE_ITERS = 2500
+BATCH_SIZE = 16
+GENERATOR_INPUT_SIZE = 16
+
+D_STEPS = 1
+G_STEPS = 1
 
 GRID_SIZE = SIDE_LENGTH**2
 
@@ -24,9 +29,9 @@ class Generator(nn.Module):
 
         self.input_layer = nn.Linear(GENERATOR_INPUT_SIZE, 16)
         self.non_linear_1 = nn.ReLU()
-        self.inner_layer = nn.Linear(16, 16)
+        self.inner_layer = nn.Linear(16, 32)
         self.non_linear_2 = nn.ReLU()
-        self.output_layer = nn.Linear(16, GRID_SIZE)
+        self.output_layer = nn.Linear(32, GRID_SIZE)
 
     def forward(self, x):
         x = self.input_layer(x)
@@ -43,11 +48,11 @@ class Discriminator(nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.input_layer = nn.Linear(GRID_SIZE, 32)
-        self.non_linear_1 = nn.ReLU()
-        self.inner_layer = nn.Linear(32, 32)
-        self.non_linear_2 = nn.ReLU()
-        self.output_layer = nn.Linear(32, 1)
+        self.input_layer = nn.Linear(GRID_SIZE, 64)
+        self.non_linear_1 = nn.LeakyReLU(0.2)
+        self.inner_layer = nn.Linear(64, 16)
+        self.non_linear_2 = nn.LeakyReLU(0.2)
+        self.output_layer = nn.Linear(16, 1)
 
     def forward(self, x):
         x = x.view(-1, GRID_SIZE)
@@ -90,17 +95,22 @@ class BarsAndStripesDataset(Dataset):
         return sample, 1
 
 
-def imshow(img):
-    img = img / 2 + 0.5
-    npimg = img.numpy()
-    plt.imshow(np.transpose(npimg, (1, 2, 0)))
+def show_grid(x, y, title=""):
+    _, ax = plt.subplots(2)
+    ax[0].imshow(x.detach().cpu().numpy(), cmap="gray", vmin=0, vmax=1)
+    ax[1].imshow(y.detach().cpu().numpy(), cmap="gray", vmin=0, vmax=1)
     plt.show()
+
+
+def straight_through_sample(probs):
+    hard = (probs > torch.rand_like(probs)).float()
+    return hard + (probs - hard).detach()
 
 
 def main():
     device = "cpu"
     x = torch.randn((1), device=device)
-    real_data = BarsAndStripesDataset(3)
+    real_data = BarsAndStripesDataset(SIDE_LENGTH)
 
     train_loader = torch.utils.data.DataLoader(
         real_data, shuffle=True, batch_size=BATCH_SIZE
@@ -110,8 +120,10 @@ def main():
     discriminator = Discriminator()
     criterion = nn.BCEWithLogitsLoss()
 
-    g_optimizer = torch.optim.Adam(generator.parameters(), lr=0.0001)
-    d_optimizer = torch.optim.Adam(discriminator.parameters(), lr=0.0001)
+    g_optimizer = torch.optim.Adam(generator.parameters(), lr=2e-4, betas=(0.5, 0.999))
+    d_optimizer = torch.optim.Adam(
+        discriminator.parameters(), lr=2e-4, betas=(0.5, 0.999)
+    )
 
     for epoch in range(ITERATIONS):
         for i, data in enumerate(train_loader):
@@ -126,15 +138,17 @@ def main():
             with torch.no_grad():
                 g_logits = generator(z)
                 g_probs = torch.sigmoid(g_logits)  # match real range [0,1]
+                g_st = straight_through_sample(g_probs)
 
             real_labels = torch.ones((bs, 1), device=device)
             fake_labels = torch.zeros((bs, 1), device=device)
 
             d_optimizer.zero_grad()
             d_real = discriminator(r_data)
-            with torch.no_grad():
-                g_probs = torch.sigmoid(generator(z))
             d_fake = discriminator(g_probs)
+
+            # grad = torch.autograd.grad(d_real.sum(), r_data, create_graph=True)[0]
+            # r1 = grad.pow(2).view(bs, -1).sum(1).mean()
 
             d_loss = torch.relu(1 - d_real).mean() + torch.relu(1 + d_fake).mean()
             d_loss.backward()
@@ -147,11 +161,12 @@ def main():
             g_optimizer.zero_grad()
             g_probs = torch.sigmoid(generator(z))
             d_fake_for_g = discriminator(g_probs)
-            g_loss = -d_fake_for_g.mean()
+            binarize = (g_probs * (1 - g_probs)).mean()
+            g_loss = -d_fake_for_g.mean()  # + 0.01 * binarize
             g_loss.backward()
             g_optimizer.step()
 
-            if i == len(train_loader) - 1 and (epoch + 1) % 50 == 0:
+            if i == len(train_loader) - 1 and (epoch + 1) % UPDATE_ITERS == 0:
                 print("g grads")
                 for name, param in generator.named_parameters():
                     if param.grad is None:
@@ -171,7 +186,24 @@ def main():
                 print(
                     f"Epoch {epoch}: Loss_D: {d_loss.item()}, Loss_G: {g_loss.item()}"
                 )
-                # imshow(torchvision.utils.make_grid(gen_data.cpu()[0]))
+            if i == len(train_loader) - 1 and (epoch + 1) % IMAGE_ITERS == 0:
+                with torch.no_grad():
+                    g_probs_vis = torch.sigmoid(
+                        generator(torch.randn((1, GENERATOR_INPUT_SIZE), device=device))
+                    )[0]
+                    g_hard_vis = (g_probs_vis > 0.5).float()
+                show_grid(g_probs_vis, g_hard_vis, f"Epoch {epoch + 1} probs")
+
+    fig, axs = plt.subplots(4, 4)
+
+    for row in axs:
+        for ax in row:
+            g_probs_vis = torch.sigmoid(
+                generator(torch.randn((1, GENERATOR_INPUT_SIZE), device=device))
+            )[0]
+            g_hard_vis = (g_probs_vis > 0.5).float()
+            ax.imshow(g_hard_vis.detach().cpu().numpy(), cmap="gray", vmin=0, vmax=1)
+    plt.show()
 
 
 if __name__ == "__main__":
