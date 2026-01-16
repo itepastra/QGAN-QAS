@@ -27,10 +27,12 @@ class Generator(nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.input_layer = nn.Linear(GENERATOR_INPUT_SIZE, 16)
-        self.non_linear_1 = nn.ReLU()
-        self.inner_layer = nn.Linear(16, 32)
-        self.non_linear_2 = nn.ReLU()
+        self.input_layer = nn.Linear(GENERATOR_INPUT_SIZE, 32)
+        self.non_linear_1 = nn.Tanh()
+        self.inner_layer = nn.Linear(32, 32)
+        self.non_linear_2 = nn.Tanh()
+        self.inner_layer_2 = nn.Linear(32, 32)
+        self.non_linear_3 = nn.Tanh()
         self.output_layer = nn.Linear(32, GRID_SIZE)
 
     def forward(self, x):
@@ -38,6 +40,8 @@ class Generator(nn.Module):
         x = self.non_linear_1(x)
         x = self.inner_layer(x)
         x = self.non_linear_2(x)
+        x = self.inner_layer_2(x)
+        x = self.non_linear_3(x)
         x = self.output_layer(x)
 
         x = x.view(-1, SIDE_LENGTH, SIDE_LENGTH)
@@ -50,9 +54,9 @@ class Discriminator(nn.Module):
 
         self.input_layer = nn.Linear(GRID_SIZE, 64)
         self.non_linear_1 = nn.LeakyReLU(0.2)
-        self.inner_layer = nn.Linear(64, 16)
+        self.inner_layer = nn.Linear(64, 32)
         self.non_linear_2 = nn.LeakyReLU(0.2)
-        self.output_layer = nn.Linear(16, 1)
+        self.output_layer = nn.Linear(32, 1)
 
     def forward(self, x):
         x = x.view(-1, GRID_SIZE)
