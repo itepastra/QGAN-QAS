@@ -77,7 +77,7 @@ class Discriminator(nn.Module):
     def __init__(self, dim=9):
         super().__init__()
         self.net = nn.Sequential(
-            spectral_norm(nn.Linear(9, 32)),
+            spectral_norm(nn.Linear(dim, 32)),
             nn.LeakyReLU(0.2),
             spectral_norm(nn.Linear(32, 1)),
         )
@@ -246,13 +246,17 @@ class QGAN:
     # ----------------------------
     @staticmethod
     def d_hinge_loss(d_real: torch.Tensor, d_fake: torch.Tensor) -> torch.Tensor:
-        return torch.mean(torch.relu(1.0 - d_real)) + torch.mean(torch.relu(1.0 + d_fake))
+        return torch.mean(torch.relu(1.0 - d_real)) + torch.mean(
+            torch.relu(1.0 + d_fake)
+        )
 
     def d_step(self) -> float:
         self.D.train()
 
         idx = np.random.randint(0, self.num_real, size=self.batch_size)
-        real = torch.tensor(self.data[idx], dtype=torch.float32, device=self.device_torch)
+        real = torch.tensor(
+            self.data[idx], dtype=torch.float32, device=self.device_torch
+        )
 
         fake_np = self.sample_generator(shots=self.batch_size)
         fake = torch.tensor(fake_np, dtype=torch.float32, device=self.device_torch)
@@ -387,7 +391,12 @@ class QGAN:
     # ----------------------------
     # Visualization
     # ----------------------------
-    def plot_samples(self, shots: int = 64, title: str = "Generator samples", savepath: Path | None = None):
+    def plot_samples(
+        self,
+        shots: int = 64,
+        title: str = "Generator samples",
+        savepath: Path | None = None,
+    ):
         samples = self.sample_generator(shots=shots)
         mask = np.any(np.all(samples[:, None] == self.data[None, :, :], axis=2), axis=1)
 

@@ -6,11 +6,11 @@ import torch.nn as nn
 from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 
-SIDE_LENGTH = 3
-ITERATIONS = 500000
+SIDE_LENGTH = 4
+ITERATIONS = 100000
 UPDATE_ITERS = 100
 IMAGE_ITERS = 500001
-BATCH_SIZE = 14
+BATCH_SIZE = 30
 GENERATOR_INPUT_SIZE = 9
 
 N_CRITIC = 5  # critic steps per generator step
@@ -259,7 +259,14 @@ def main():
                             sample = generator(
                                 torch.randn(1, GENERATOR_INPUT_SIZE, device=device)
                             )[0]
-                            ax.imshow(sample.detach().cpu().numpy(), cmap="gray", vmin=0, vmax=1)
+                            ax.imshow(
+                                sample.detach().cpu().numpy(),
+                                cmap="gray",
+                                vmin=0,
+                                vmax=1,
+                            )
+                            ax.set_yticks([])
+                            ax.set_xticks([])
                     plt.show()
 
     # Final samples (hard thresholded)
@@ -272,11 +279,13 @@ def main():
                 ]
                 hard = (sample > 0.5).float()
                 ax.imshow(hard.detach().cpu().numpy(), cmap="gray", vmin=0, vmax=1)
+                ax.set_yticks([])
+                ax.set_xticks([])
         plt.show()
 
     # Loss curves
     plt.figure()
-    avg = 50
+    avg = 200
     if len(c_losses) > avg:
         plt.plot(
             np.linspace(0, len(g_losses), len(c_losses) - avg + 1),

@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 SIDE_LENGTH = 3
 ITERATIONS = 10000
 UPDATE_ITERS = 100
-IMAGE_ITERS = -1
+IMAGE_ITERS = 100000
 BATCH_SIZE = 30
 GENERATOR_INPUT_SIZE = 9
 
@@ -279,7 +279,9 @@ def main():
                     0
                 ]
                 hard = (sample > 0.5).float()
-                ax.imshow(hard.detach().cpu().numpy(), cmap="gray")
+                ax.imshow(hard.detach().cpu().numpy(), cmap="gray", vmin=0, vmax=1)
+                ax.set_xticks([])
+                ax.set_yticks([])
         plt.show()
 
     # Loss curves
@@ -314,6 +316,7 @@ def main():
     plt.hist(final_stats["fake_pixels"].numpy(), bins=30)
     plt.title("Generator pixel probability distribution")
     plt.show()
+
 
 
 if __name__ == "__main__":
