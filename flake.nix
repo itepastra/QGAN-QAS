@@ -166,6 +166,8 @@
               numpy
               torch
               pennylane
+              jax
+              optax
 
               matplotlib
               torchvision
