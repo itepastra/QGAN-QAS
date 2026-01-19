@@ -7,9 +7,9 @@ from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 
 SIDE_LENGTH = 3
-ITERATIONS = 10000
+ITERATIONS = 50000
 UPDATE_ITERS = 100
-IMAGE_ITERS = 20000
+IMAGE_ITERS = 50000
 BATCH_SIZE = 30
 GENERATOR_INPUT_SIZE = 9
 
@@ -67,8 +67,6 @@ class BarsAndStripesDataset(Dataset):
             (2**side_length, side_length**2)
         )
 
-        fig, axs = plt.subplots(4, 4)
-        i = 0
         # make sure to keep only one fully empty and one full square
         self.data = torch.tensor(
             np.vstack((bars[:-1], stripes[1:])), dtype=torch.float32
@@ -145,17 +143,10 @@ def eval_generator_validity(generator, device, n=1024):
     with torch.no_grad():
         z = torch.randn(n, GENERATOR_INPUT_SIZE, device=device)
         probs = generator(z)  # (n,3,3) in [0,1]
-        hard = (probs > 0.5).float()
+        hard = (probs > 0.2).float()
         valid = is_bars_or_stripes(hard).float().mean().item()
     generator.train()
     return valid
-
-
-def show_grid(x, y, title=""):
-    _, ax = plt.subplots(2)
-    ax[0].imshow(x.detach().cpu().numpy(), cmap="gray", vmin=0, vmax=1)
-    ax[1].imshow(y.detach().cpu().numpy(), cmap="gray", vmin=0, vmax=1)
-    plt.show()
 
 
 def gradient_penalty(critic, real, fake, device="cpu"):
@@ -200,10 +191,8 @@ def main():
     discriminator = Critic().to(device)
 
     # WGAN-GP commonly uses these betas
-    g_optimizer = torch.optim.Adam(generator.parameters(), lr=1e-4, betas=(0.0, 0.9))
-    c_optimizer = torch.optim.Adam(
-        discriminator.parameters(), lr=1e-4, betas=(0.0, 0.9)
-    )
+    g_optimizer = torch.optim.Adam(generator.parameters(), lr=1e-3)
+    c_optimizer = torch.optim.Adam(discriminator.parameters(), lr=1e-3)
 
     step = 0
     for epoch in range(ITERATIONS):
@@ -228,7 +217,7 @@ def main():
                 c_loss.backward()
                 c_optimizer.step()
 
-                c_losses.append(float(c_loss))
+                c_losses.append(c_loss.detach().float())
 
             # --------------------
             # Generator update
@@ -259,7 +248,7 @@ def main():
                     f"Loss_C: {c_loss.item():.4f} | Loss_G: {g_loss.item():.4f} | "
                     f"P(real|real): {stats['p_real_given_real']:.3f} | "
                     f"P(real|fake): {stats['p_real_given_fake']:.3f} | "
-                    f"valid@0.5: {valid:.3f}"
+                    f"valid@0.2: {valid:.3f}"
                 )
 
             if (step % IMAGE_ITERS) == 0:
@@ -285,7 +274,7 @@ def main():
                     0
                 ]
                 hard = (sample > 0.5).float()
-                ax.imshow(hard.detach().cpu().numpy(), cmap="gray")
+                ax.imshow(sample.detach().cpu().numpy(), cmap="gray")
         plt.show()
 
     # Loss curves
@@ -301,14 +290,15 @@ def main():
         plt.plot(
             np.convolve(g_losses, np.ones(avg) / avg, mode="valid"), label="generator"
         )
+    plt.legend()
+
     # --- Accuracy-style curves ---
     plt.figure()
     plt.plot(steps_hist, p_rr_hist, label="P(real|real)")
     plt.plot(steps_hist, p_rf_hist, label="P(real|fake) (G fool rate)")
-    plt.plot(steps_hist, valid_hist, label="G valid bars/stripes (hard@0.5)")
-    plt.ylim(0, 1)
+    plt.plot(steps_hist, valid_hist, label="G valid bars/stripes (hard@0.2)")
+    plt.ylim(0, 1.05)
     plt.legend()
-    plt.show()
 
     # --- Discriminator score distributions + pixel probability distribution ---
     final_stats = eval_discriminator(

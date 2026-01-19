@@ -8,8 +8,6 @@ from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 
 
-import torchvision
-
 SIDE_LENGTH = 3
 ITERATIONS = 10000
 UPDATE_ITERS = 100
@@ -272,38 +270,40 @@ def main():
                         )
                 plt.show()
 
-    fig, axs = plt.subplots(4, 4)
+    # Final samples (hard thresholded)
+    with torch.no_grad():
+        fig, axs = plt.subplots(4, 4)
+        for row in axs:
+            for ax in row:
+                sample = generator(torch.randn(1, GENERATOR_INPUT_SIZE, device=device))[
+                    0
+                ]
+                hard = (sample > 0.5).float()
+                ax.imshow(sample.detach().cpu().numpy(), cmap="gray")
+        plt.show()
 
-    for row in axs:
-        for ax in row:
-            g_probs_vis = (
-                generator(torch.randn((1, GENERATOR_INPUT_SIZE), device=device))
-            )[0]
-            g_hard_vis = (g_probs_vis > 0.5).float()
-            ax.imshow(g_hard_vis.detach().cpu().numpy(), cmap="gray", vmin=0, vmax=1)
-
+    # Loss curves
     plt.figure()
-    average_over = 10
-    plt.plot(
-        np.convolve(d_losses, np.ones(average_over) / average_over, mode="valid"),
-        label="discriminator",
-    )
-    plt.plot(
-        np.convolve(g_losses, np.ones(average_over) / average_over, mode="valid"),
-        label="generator",
-    )
+    avg = 50
+    if len(d_losses) > avg:
+        plt.plot(
+            np.linspace(0, len(g_losses), len(d_losses) - avg + 1),
+            np.convolve(d_losses, np.ones(avg) / avg, mode="valid"),
+            label="critic",
+        )
+    if len(g_losses) > avg:
+        plt.plot(
+            np.convolve(g_losses, np.ones(avg) / avg, mode="valid"), label="generator"
+        )
     plt.legend()
-
-    plt.show()
 
     # --- Accuracy-style curves ---
     plt.figure()
     plt.plot(steps_hist, p_rr_hist, label="P(real|real)")
     plt.plot(steps_hist, p_rf_hist, label="P(real|fake) (G fool rate)")
-    plt.plot(steps_hist, valid_hist, label="G valid bars/stripes (hard@0.5)")
-    plt.ylim(0, 1)
+    plt.plot(steps_hist, valid_hist, label="G valid bars/stripes (hard@0.2)")
+    plt.ylim(0, 1.05)
     plt.legend()
-    plt.show()
 
     # --- Discriminator score distributions + pixel probability distribution ---
     final_stats = eval_discriminator(
