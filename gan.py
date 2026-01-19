@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import torchvision
 
 SIDE_LENGTH = 3
-ITERATIONS = 50000
+ITERATIONS = 10000
 UPDATE_ITERS = 100
 IMAGE_ITERS = 20000
 BATCH_SIZE = 30
@@ -48,7 +48,7 @@ class Discriminator(nn.Module):
         self.arch = nn.Sequential(
             nn.Linear(GENERATOR_INPUT_SIZE, 16),
             nn.ReLU(),
-            nn.Linear(16, GRID_SIZE),
+            nn.Linear(16, 1),
             nn.Sigmoid(),
         )
 
@@ -89,6 +89,76 @@ class BarsAndStripesDataset(Dataset):
         return sample, 1
 
 
+def eval_discriminator(
+    generator, discriminator, real_loader, device, n_fake=512, thresh=0.5
+):
+    discriminator.eval()
+    generator.eval()
+
+    # --- real stats ---
+    real_scores = []
+    with torch.no_grad():
+        for real, _ in real_loader:
+            real = real.to(device)
+            real_scores.append(discriminator(real).view(-1))
+    real_scores = torch.cat(real_scores, dim=0)
+
+    p_real_given_real = (real_scores > thresh).float().mean().item()
+
+    # --- fake stats ---
+    fake_scores = []
+    fake_pixels = []
+    with torch.no_grad():
+        bs = 64
+        for _ in range((n_fake + bs - 1) // bs):
+            z = torch.randn(bs, GENERATOR_INPUT_SIZE, device=device)
+            fake = generator(z)
+            fake_pixels.append(fake.reshape(-1))
+            fake_scores.append(discriminator(fake).view(-1))
+    fake_scores = torch.cat(fake_scores, dim=0)[:n_fake]
+    fake_pixels = torch.cat(fake_pixels, dim=0)
+
+    p_real_given_fake = (fake_scores > thresh).float().mean().item()
+    p_fake_given_fake = 1.0 - p_real_given_fake
+
+    out = {
+        "p_real_given_real": p_real_given_real,
+        "p_real_given_fake": p_real_given_fake,
+        "p_fake_given_fake": p_fake_given_fake,
+        "real_scores": real_scores.detach().cpu(),
+        "fake_scores": fake_scores.detach().cpu(),
+        "fake_pixels": fake_pixels.detach().cpu(),
+    }
+
+    discriminator.train()
+    generator.train()
+    return out
+
+
+def is_bars_or_stripes(x_hard):
+    """
+    x_hard: (B, 3, 3) in {0,1}
+    bars: each column constant across rows
+    stripes: each row constant across cols
+    """
+    # bars: all rows equal for each col -> each col has zero variance over rows
+    bars = (x_hard.var(dim=1) == 0).all(dim=1)  # (B,)
+    # stripes: all cols equal for each row -> each row has zero variance over cols
+    stripes = (x_hard.var(dim=2) == 0).all(dim=1)  # (B,)
+    return bars | stripes
+
+
+def eval_generator_validity(generator, device, n=1024):
+    generator.eval()
+    with torch.no_grad():
+        z = torch.randn(n, GENERATOR_INPUT_SIZE, device=device)
+        probs = generator(z)  # (n,3,3) in [0,1]
+        hard = (probs > 0.5).float()
+        valid = is_bars_or_stripes(hard).float().mean().item()
+    generator.train()
+    return valid
+
+
 def show_grid(x, y, title=""):
     _, ax = plt.subplots(2)
     ax[0].imshow(x.detach().cpu().numpy(), cmap="gray", vmin=0, vmax=1)
@@ -116,6 +186,10 @@ def main():
 
     g_losses = []
     d_losses = []
+    p_rr_hist = []  # P(real|real)
+    p_rf_hist = []  # P(real|fake)
+    valid_hist = []  # fraction of valid bars/stripes among hard samples
+    steps_hist = []  # x-axis
 
     g_optimizer = torch.optim.Adam(generator.parameters(), lr=1e-2)
     d_optimizer = torch.optim.Adam(discriminator.parameters(), lr=1e-2)
@@ -157,24 +231,22 @@ def main():
             g_optimizer.step()
 
             if i == len(train_loader) - 1 and (epoch + 1) % UPDATE_ITERS == 0:
-                # print("g grads")
-                # for name, param in generator.named_parameters():
-                #     if param.grad is None:
-                #         print(f"No gradient for {name}")
-                #     elif param.grad.abs().sum() == 0:
-                #         print(f"Zero gradient for {name}")
-                #     else:
-                #         print(param.grad)
-                # print("d grads")
-                # for name, param in discriminator.named_parameters():
-                #     if param.grad is None:
-                #         print(f"No gradient for {name}")
-                #     elif param.grad.abs().sum() == 0:
-                #         print(f"Zero gradient for {name}")
-                #     else:
-                #         print(param.grad)
+                stats = eval_discriminator(
+                    generator, discriminator, train_loader, device, n_fake=512
+                )
+                valid = eval_generator_validity(generator, device, n=1024)
+
+                p_rr_hist.append(stats["p_real_given_real"])
+                p_rf_hist.append(stats["p_real_given_fake"])
+                valid_hist.append(valid)
+                steps_hist.append(epoch + 1)
+
                 print(
-                    f"Epoch {epoch}: Loss_D: {d_loss.item()}, Loss_G: {g_loss.item()}"
+                    f"Epoch {epoch + 1} | "
+                    f"Loss_D: {d_loss.item():.4f} | Loss_G: {g_loss.item():.4f} | "
+                    f"P(real|real): {stats['p_real_given_real']:.3f} | "
+                    f"P(real|fake): {stats['p_real_given_fake']:.3f} | "
+                    f"valid@0.5: {valid:.3f}"
                 )
             if i == len(train_loader) - 1 and (epoch + 1) % IMAGE_ITERS == 0:
                 with torch.no_grad():
@@ -222,6 +294,25 @@ def main():
     )
     plt.legend()
 
+    plt.show()
+
+    # --- Accuracy-style curves ---
+    plt.figure()
+    plt.plot(steps_hist, p_rr_hist, label="P(real|real)")
+    plt.plot(steps_hist, p_rf_hist, label="P(real|fake) (G fool rate)")
+    plt.plot(steps_hist, valid_hist, label="G valid bars/stripes (hard@0.5)")
+    plt.ylim(0, 1)
+    plt.legend()
+    plt.show()
+
+    # --- Discriminator score distributions + pixel probability distribution ---
+    final_stats = eval_discriminator(
+        generator, discriminator, train_loader, device, n_fake=2048
+    )
+
+    plt.figure()
+    plt.hist(final_stats["fake_pixels"].numpy(), bins=30)
+    plt.title("Generator pixel probability distribution")
     plt.show()
 
 
