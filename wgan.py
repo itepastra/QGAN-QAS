@@ -7,13 +7,13 @@ from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 
 SIDE_LENGTH = 3
-ITERATIONS = 50000
+ITERATIONS = 500000
 UPDATE_ITERS = 100
-IMAGE_ITERS = 50000
-BATCH_SIZE = 30
+IMAGE_ITERS = 500001
+BATCH_SIZE = 14
 GENERATOR_INPUT_SIZE = 9
 
-N_CRITIC = 1  # critic steps per generator step
+N_CRITIC = 5  # critic steps per generator step
 LAMBDA_GP = 5.0  # gradient penalty weight
 
 GRID_SIZE = SIDE_LENGTH**2
@@ -24,7 +24,7 @@ class Generator(nn.Module):
         super().__init__()
         self.arch = nn.Sequential(
             nn.Linear(GENERATOR_INPUT_SIZE, 16),
-            nn.ReLU(),
+            nn.LeakyReLU(0.2),
             nn.Linear(16, GRID_SIZE),
             nn.Sigmoid(),
         )
@@ -143,7 +143,7 @@ def eval_generator_validity(generator, device, n=1024):
     with torch.no_grad():
         z = torch.randn(n, GENERATOR_INPUT_SIZE, device=device)
         probs = generator(z)  # (n,3,3) in [0,1]
-        hard = (probs > 0.2).float()
+        hard = (probs > 0.5).float()
         valid = is_bars_or_stripes(hard).float().mean().item()
     generator.train()
     return valid
@@ -191,8 +191,8 @@ def main():
     discriminator = Critic().to(device)
 
     # WGAN-GP commonly uses these betas
-    g_optimizer = torch.optim.Adam(generator.parameters(), lr=1e-3)
-    c_optimizer = torch.optim.Adam(discriminator.parameters(), lr=1e-3)
+    g_optimizer = torch.optim.Adam(generator.parameters(), lr=3e-3)
+    c_optimizer = torch.optim.Adam(discriminator.parameters(), lr=3e-3)
 
     step = 0
     for epoch in range(ITERATIONS):
@@ -248,7 +248,7 @@ def main():
                     f"Loss_C: {c_loss.item():.4f} | Loss_G: {g_loss.item():.4f} | "
                     f"P(real|real): {stats['p_real_given_real']:.3f} | "
                     f"P(real|fake): {stats['p_real_given_fake']:.3f} | "
-                    f"valid@0.2: {valid:.3f}"
+                    f"valid@0.5: {valid:.3f}"
                 )
 
             if (step % IMAGE_ITERS) == 0:
@@ -259,22 +259,19 @@ def main():
                             sample = generator(
                                 torch.randn(1, GENERATOR_INPUT_SIZE, device=device)
                             )[0]
-                            ax.imshow(sample.detach().cpu().numpy(), cmap="gray")
+                            ax.imshow(sample.detach().cpu().numpy(), cmap="gray", vmin=0, vmax=1)
                     plt.show()
-
-        # optional early exit for sanity
-        # if epoch > 1000: break
 
     # Final samples (hard thresholded)
     with torch.no_grad():
-        fig, axs = plt.subplots(4, 4)
+        fig, axs = plt.subplots(8, 8)
         for row in axs:
             for ax in row:
                 sample = generator(torch.randn(1, GENERATOR_INPUT_SIZE, device=device))[
                     0
                 ]
                 hard = (sample > 0.5).float()
-                ax.imshow(sample.detach().cpu().numpy(), cmap="gray")
+                ax.imshow(hard.detach().cpu().numpy(), cmap="gray", vmin=0, vmax=1)
         plt.show()
 
     # Loss curves
@@ -296,7 +293,7 @@ def main():
     plt.figure()
     plt.plot(steps_hist, p_rr_hist, label="P(real|real)")
     plt.plot(steps_hist, p_rf_hist, label="P(real|fake) (G fool rate)")
-    plt.plot(steps_hist, valid_hist, label="G valid bars/stripes (hard@0.2)")
+    plt.plot(steps_hist, valid_hist, label="G valid bars/stripes (hard@0.5)")
     plt.ylim(0, 1.05)
     plt.legend()
 

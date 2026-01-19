@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 SIDE_LENGTH = 3
 ITERATIONS = 10000
 UPDATE_ITERS = 100
-IMAGE_ITERS = 20000
+IMAGE_ITERS = -1
 BATCH_SIZE = 30
 GENERATOR_INPUT_SIZE = 9
 
@@ -272,14 +272,14 @@ def main():
 
     # Final samples (hard thresholded)
     with torch.no_grad():
-        fig, axs = plt.subplots(4, 4)
+        fig, axs = plt.subplots(8, 8)
         for row in axs:
             for ax in row:
                 sample = generator(torch.randn(1, GENERATOR_INPUT_SIZE, device=device))[
                     0
                 ]
                 hard = (sample > 0.5).float()
-                ax.imshow(sample.detach().cpu().numpy(), cmap="gray")
+                ax.imshow(hard.detach().cpu().numpy(), cmap="gray")
         plt.show()
 
     # Loss curves
@@ -301,7 +301,7 @@ def main():
     plt.figure()
     plt.plot(steps_hist, p_rr_hist, label="P(real|real)")
     plt.plot(steps_hist, p_rf_hist, label="P(real|fake) (G fool rate)")
-    plt.plot(steps_hist, valid_hist, label="G valid bars/stripes (hard@0.2)")
+    plt.plot(steps_hist, valid_hist, label="G valid bars/stripes (hard@0.5)")
     plt.ylim(0, 1.05)
     plt.legend()
 
